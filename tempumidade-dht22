@@ -1,0 +1,321 @@
+/*
+ * Por Fabio Kimura - 2019 - fkimura@gmail.com
+ * Fique à vontade para alterar e utilizar em seu projeto, mas lembre de citar a fonte, por favor
+ * GNU Public License
+ */
+
+#include <Adafruit_ST7735.h>
+#include <Adafruit_GFX.h>
+#include "DHT.h"
+#include "SPI.h"
+#include "Fonts/FreeSerifBold9pt7b.h"
+#include "Fonts/FreeSerif9pt7b.h"
+#define ST7735_GRAY    0x8410
+#define TFT_SCLK  7 //SCK  
+#define TFT_MOSI  6 //SDA  
+#define TFT_RST   5 //RES 
+#define TFT_DC    4 //RS 
+#define TFT_CS    3 //CS
+
+const int pino_mos = 11;
+const int pino_dht = 10; // pino onde o sensor DHT está conectado
+
+float temperatura = 0; // variável para armazenar o valor de temperatura
+float temperaturaAnterior = 2;
+int umidade = 0; // variável para armazenar o valor de umidade
+int umidadeAnterior = 2;
+DHT dht(pino_dht, DHT22); // define o pino e o tipo de DHT, se utilizar o DHT11 basta alterar para DHT11 aqui
+
+
+int temperaturas[120];
+int umidades[120];
+int tempMin = 99;
+int tempMax = 0;
+int umidadeMin = 99;
+int umidadeMax = 0;
+int rotinaApagar = 0;
+int cor = ST7735_BLACK;
+int velocidade = 0;
+
+Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST);
+
+void setup()
+{
+  pinMode(pino_mos, OUTPUT);
+  digitalWrite(pino_mos, HIGH);
+  dht.begin(); // inicializa o sensor DHT
+  Serial.begin(9600); // 9600bps
+  tft.initR(INITR_BLACKTAB);
+  Serial.println("Rotation=" + String(tft.getRotation()));
+  tft.setRotation(2);
+  Serial.println("Rotation=" + String(tft.getRotation()));
+  tft.fillScreen(ST7735_BLACK);
+  // desenha as molduras:
+  tft.drawRect(0, 0, 128, 160, ST7735_WHITE);
+
+  tft.drawPixel(0, 0, ST7735_BLACK);
+  tft.drawPixel(127, 0, ST7735_BLACK);
+  tft.drawPixel(0, 159, ST7735_BLACK);
+  tft.drawPixel(127, 159, ST7735_BLACK);
+
+  tft.drawPixel(1, 1, ST7735_WHITE);
+  tft.drawPixel(126, 1, ST7735_WHITE);
+  tft.drawPixel(1, 158, ST7735_WHITE);
+  tft.drawPixel(126, 158, ST7735_WHITE);
+
+  tft.drawRect(4, 13, 121, 20, ST7735_GREEN);
+  tft.drawRect(4, 77, 121, 20, ST7735_GREEN);
+
+  tft.setTextColor(ST7735_YELLOW);
+  tft.setTextSize(0);
+  tft.setCursor(33, 2);
+  tft.println("Fabio Kimura");
+  tft.setTextColor(ST7735_GREEN);
+  tft.setTextSize(2);
+  tft.setCursor(62, 22);
+  tft.setFont(&FreeSerif9pt7b);
+  tft.setTextSize(0);
+  tft.print("C");
+  tft.setFont();
+  tft.setCursor(55, 16);
+  tft.setTextSize(1);
+  tft.print("o");
+  // desenha a gota de umidade:
+  tft.drawCircle(64, 88, 4, ST7735_GREEN);
+  tft.drawLine(63, 84, 65, 84, ST7735_BLACK);
+  tft.drawLine(62, 84, 64, 81, ST7735_GREEN);
+  tft.drawLine(66, 84, 64, 81, ST7735_GREEN);
+  tft.setCursor(5, 150);
+  tft.setTextColor(ST7735_YELLOW, ST7735_BLACK);
+  tft.println("Bom dia!    ");
+}
+
+void loop()
+{
+  Serial.println("---------------------------------");
+  leDados();
+  escreverTemperatura(16);
+  escreverUmidade(80);
+  desenharGraficoTemperatura(16);
+  desenharGraficoUmidade(80);
+  long espera = 0; // ja demora quase 3 segundos pra desenhar tudo
+  // espera mais depois de 120 segundos
+  if (temperaturas[0] != 0) {
+    espera = 680;
+    if (temperatura >= 24) {
+      long t = temperatura * 10;
+      velocidade = map(t, 240, 300, 55, 255);
+      Serial.println("velocidade=" + String(velocidade));
+      tft.setCursor(5, 150);
+      tft.setTextColor(ST7735_YELLOW, ST7735_BLACK);
+//      tft.println("fan:" + String(velocidade) + "   ");
+      if (temperatura > 26) {
+        tft.println("Calor dos infernos!  ");        
+      } else {
+        tft.println("Que calor!        ");
+      }
+// liga o ventilador na porta mos      
+//      analogWrite(pino_mos, velocidade);
+    } else {
+      tft.setCursor(5, 150);
+      tft.setTextColor(ST7735_WHITE, ST7735_BLACK);
+      tft.println("              ");
+// desliga o ventilador do mosfet      
+//      analogWrite(pino_mos, 0);
+    }
+  }
+
+  Serial.println("espera=" + String(espera));
+  if (cor == ST7735_BLACK) {
+    cor = ST7735_CYAN;
+  } else {
+    cor = ST7735_BLACK;
+  }
+
+  int total = 0;
+  for (int i = 0; i < 60; i++) {
+    tft.drawPixel(i + 4, 11, cor);
+    tft.drawPixel(123 - i, 11, cor);
+    if (espera > 0) {
+      total = total + espera;
+      if (total >= (2000 - espera)) {
+        total = 400;
+        leDados();
+        escreverTemperatura(16);
+        escreverUmidade(80);
+        delay(total);
+      } else {
+        delay(espera);
+      }
+    }
+  }
+}
+
+void leDados() {
+  temperaturaAnterior = temperatura;
+  temperatura = dht.readTemperature() ; // lê a temperatura em Celsius
+  umidadeAnterior = umidade;
+  umidade = dht.readHumidity(); // lê a umidade
+  if (isnan(umidade) || isnan(temperatura)) {
+    tft.setCursor(5, 16);
+    tft.println("Erro!");
+    Serial.println("Erro!");
+  }
+  else { // Se não
+    Serial.println("temperatura=" + String(temperatura) + ", umidade=" + String(umidade));
+  }
+}
+
+
+void escreverTemperatura(int y) {
+  if (isnan(temperatura) || temperatura == temperaturaAnterior) {
+    return;
+  }
+  //tft.setFont(&FreeMono9pt7b);
+  tft.setTextSize(2);
+  tft.setCursor(10, y);
+  int t = (int) temperatura;
+  int g = (int)((temperatura - t) * 10);
+  tft.setTextColor(ST7735_GREEN, ST7735_BLACK);
+  if (temperatura >= 24) {
+    tft.setTextColor(ST7735_RED, ST7735_BLACK);
+  }
+  tft.fillRect(12,y,42,16, ST7735_BLACK);
+  tft.setCursor(12, y+7);
+  tft.setFont(&FreeSerifBold9pt7b);
+  tft.setTextSize(0);
+  tft.print(t);
+  tft.print(".");
+  tft.print(g);
+  tft.setFont();
+  if (tempMax < temperatura) {
+    tempMax = temperatura;
+  }
+  if (tempMin > temperatura) {
+    tempMin = temperatura;
+  }
+  tft.setCursor(86, y);
+  tft.setTextSize(0);
+  tft.setTextColor(ST7735_GREEN, ST7735_BLACK);
+  tft.print("min:");
+  tft.print(tempMin);
+  tft.setCursor(86, y + 8);
+  if (tempMax >= 24) {
+    tft.setTextColor(ST7735_RED, ST7735_BLACK);
+  }
+  tft.print("max:");
+  tft.print(tempMax);
+}
+void desenharGraficoTemperatura(int y) {
+  if (isnan(temperatura)) {
+    return;
+  }
+  int h = y + 40;
+  for (int i = 0; i < 120 - 1; i++) {
+    temperaturas[i] = temperaturas[i + 1];
+  }
+  temperaturas[119] = temperatura;
+  for (int i = 0; i < 120; i++) {
+    tft.drawLine(i + 3, 33, i + 3, h + 20, ST7735_BLACK);
+    tft.drawPixel(i + 3, h, ST7735_BLUE);
+    int t = temperaturas[i];
+    if (t != 0) {
+      int yy = h - (t - 22);
+      //Serial.println("eixo y temp=" + String(yy) + " " + String(h) + ":" + String(t) +", x=" + String(i+3));
+      if (yy > h + 20) {
+        yy = h + 20;
+      }
+      if (yy < 33) {
+        yy = 33;
+      }
+      tft.drawPixel(i + 3, yy, ST7735_YELLOW);
+    }
+  }
+}
+
+void escreverUmidade(int y) {
+  if (isnan(umidade) || umidade == umidadeAnterior) {
+    return;
+  }
+  tft.setTextSize(2);
+  tft.setCursor(10, y);
+  tft.setTextColor(ST7735_GREEN, ST7735_BLACK);
+  if (umidade < 50) {
+    tft.setTextColor(ST7735_RED, ST7735_BLACK);
+  }
+  tft.fillRect(10,y,50,16, ST7735_BLACK);
+  tft.setCursor(12, y+7);
+  tft.setFont(&FreeSerifBold9pt7b);
+  tft.setTextSize(0);
+  tft.print(umidade);
+  tft.print("%");
+  tft.setFont();
+  if (umidadeMax < umidade) {
+    umidadeMax = umidade;
+  }
+  if (umidadeMin > umidade) {
+    umidadeMin = umidade;
+  }
+  tft.setCursor(86, y);
+  tft.setTextSize(0);
+  if (umidadeMin < 50) {
+    tft.setTextColor(ST7735_RED, ST7735_BLACK);
+  }
+  tft.print("min:");
+  tft.print(umidadeMin);
+  tft.setCursor(86, y + 8);
+  tft.setTextColor(ST7735_GREEN, ST7735_BLACK);
+  tft.print("max:");
+  tft.print(umidadeMax);
+}
+
+void desenharGraficoUmidade(int y) {
+  if (isnan(umidade)) {
+    return;
+  }
+  int h = y + 42;
+  for (int i = 0; i < 120 - 1; i++) {
+    umidades[i] = umidades[i + 1];
+  }
+  umidades[119] = umidade;
+  for (int i = 0; i < 120; i++) {
+    tft.drawLine(i + 3, y + 17, i + 3, 149, ST7735_BLACK);
+    tft.drawPixel(i + 3, h, ST7735_BLUE);
+    int u = umidades[i];
+    if (u != 0) {
+      int yy = h + (50 - u);
+      //Serial.println("eixo y umidade=" + String(yy) + " " + String(h) + ":" + String(u) + ",x="+ String(i+3));
+      if (yy > 149) {
+        yy = 149;
+      }
+      if (yy < (y + 17)) {
+        yy = y + 17;
+      }
+      tft.drawPixel(i + 3, yy, ST7735_YELLOW);
+    }
+  }
+}
+
+
+void apagarTela() {
+  //tft.fillRect(1,10,126,158, ST7735_BLACK);
+  if (rotinaApagar == 0) {
+    for (int x = 3; x < 127 - 3; x = x + 2) {
+      tft.drawLine(x, 10, x, 157, ST7735_BLACK);
+      tft.drawLine(127 - x, 10, 127 - x, 157, ST7735_BLACK);
+    }
+  }
+  else {
+    for (int y = 0; y < 69; y = y + 2) {
+      tft.drawLine(3, y + 10, 124, y + 10, ST7735_BLACK);
+      tft.drawLine(3, 158 - y, 124, 158 - y, ST7735_BLACK);
+    }
+    for (int y = 1; y < 69; y = y + 2) {
+      tft.drawLine(3, y + 10, 124, y + 10, ST7735_BLACK);
+      tft.drawLine(3, 158 - y, 124, 158 - y, ST7735_BLACK);
+    }
+  }
+  if (rotinaApagar > 1) {
+    rotinaApagar = 0;
+  }
+}
