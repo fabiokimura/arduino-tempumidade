@@ -1,7 +1,7 @@
 /*
  * Por Fabio Kimura - 2019 - fkimura@gmail.com
  * Fique à vontade para alterar e utilizar em seu projeto, mas lembre de citar a fonte, por favor
- * GNU Public License
+ * GNU General Public License GPL 3
  */
 
 #include <Adafruit_ST7735.h>
@@ -17,7 +17,7 @@
 #define TFT_DC    4 //RS 
 #define TFT_CS    3 //CS
 
-const int pino_mos = 11;
+const int pino_mos = 11; // pino do mosfet para ligar um ventilador usb
 const int pino_dht = 10; // pino onde o sensor DHT está conectado
 
 float temperatura = 0; // variável para armazenar o valor de temperatura
